@@ -16,7 +16,7 @@ export class Task extends Document {
   @Prop({ enum: ['Low', 'Medium', 'High'], default: 'Medium' })
   priority: string;
 
-  @Prop({ enum: ['Pending', 'Completed'], default: 'Pending' })
+  @Prop({ enum: ['Pending', 'Completed', 'In-Progress'], default: 'Pending' })
   status: string;
 }
 
