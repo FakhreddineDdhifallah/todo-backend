@@ -1,49 +1,57 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-import { Injectable } from '@nestjs/common';
-import * as bcrypt from 'bcryptjs';
-import * as jwt from 'jsonwebtoken';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import * as bcrypt from 'bcrypt';
+import { JwtService } from '@nestjs/jwt';
+import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
 
 @Injectable()
 export class AuthService {
-  private users: { username: string; password: string }[] = []; // Temporary user storage (use a database in production)
+  constructor(
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    private jwtService: JwtService,
+  ) {}
 
   async register(createUserDto: CreateUserDto) {
-    const { username, password } = createUserDto;
+    const { email, password } = createUserDto;
 
-    const existingUser = this.users.find((user) => user.username === username);
+    // Check if user exists
+    const existingUser = await this.userModel.findOne({ email });
     if (existingUser) {
-      throw new Error('User already exists');
+      throw new UnauthorizedException('User already exists');
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = { username, password: hashedPassword };
-    this.users.push(newUser);
 
-    return newUser;
+    // Create and save user
+    const user = new this.userModel({ email, password: hashedPassword });
+    await user.save();
+
+    return { message: 'User registered successfully' };
   }
 
   async login(loginDto: LoginDto) {
-    const { username, password } = loginDto;
+    const { email, password } = loginDto;
 
-    const user = this.users.find((user) => user.username === username);
+    // Find user
+    const user = await this.userModel.findOne({ email });
     if (!user) {
-      throw new Error('Invalid credentials');
+      throw new UnauthorizedException('Invalid credentials');
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    const passwordMatch = await bcrypt.compare(password, user.password);
-    if (!passwordMatch) {
-      throw new Error('Invalid credentials');
+    // Compare passwords
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid credentials');
     }
 
-    const token = jwt.sign({ username: user.username }, 'secretKey', {
-      expiresIn: '1h',
-    });
+    // Generate JWT
+    const payload = { email: user.email, sub: user._id };
+    const accessToken = this.jwtService.sign(payload);
 
-    return { token };
+    return { accessToken };
   }
 }
